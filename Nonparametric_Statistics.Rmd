@@ -1,0 +1,213 @@
+---
+title: "Ejercicio 3 parte B - Métodos no Paramétricos"
+author: "José Raúl Orgeira Beiro"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 
+
+## Ejercicio 3
+
+##### Considerar la base de datos del archivo Prestige.rda con información diversa de los años 70 sobre 102 diferentes ocupaciones en Canadá y que ha sido ya empleada en el desarrollo regular de las clases.
+
+##### Se pide:
+
+```{r message=F, warning=F}
+load("D:/master/Métodos no paramétricos/Datos/Prestige.rda")
+
+datos<-Prestige;attach(datos);
+```
+
+#### a) Estimar la densidad de la variable income (nivel promedio de ingresos en dólares) mediante: (i) dos histogramas con diferentes orígenes, (ii) estimadores kernel con selectores de banda obtenidos por la regla del dedo, una regla plug-in y por validación cruzada, y (iii) el mejor ajuste normal. Comentar los resultados. Proporcionar un gráfico de la función de validación cruzada para un rango equiespaciado de valores del parámetro de suavizado.
+
+(i) Dos histogramas con distintos orígenes
+
+```{r}
+breaks <- function(x,x0,h){ 
+  b <- floor((min(x)-x0)/h) : ceiling((max(x)-x0)/h)
+  b <- b*h+x0
+  return(b)
+}
+
+x0 <- c(0,12500) #origen
+h  <- 4000 #ancho de clase
+par(mfrow=c(1,2))
+for (i in 1:2)
+{
+  hist(income,freq=FALSE,breaks=breaks(income,x0[i],h), 
+       xlab="Income",
+       ylab="Histograma",main="",
+       col = "lightblue", border = "pink",
+       cex.lab=1.2 )
+  theta <- x0[i]
+  legend("topright",legend=bquote(x[0]== ~ .(theta)),
+         inset=0.025,cex=1.2,bty="n")
+}
+```
+
+En los dos histogramas anteriores podemos ver como, a pesar de ser un estimador no paramétrico de la densidad, este presenta diversos problemas como pueden ser la dependencia del origen o la dependencia del ancho de banda. En este caso vemos como ambos histogramas son asimétricos, sin embargo, el histograma con origen en x0=12500 presenta una mayor frecuencia en el primero de los "bloques" y una caída mucho más pronunciada en el tercero de ellos.
+
+(ii) estimadores kernel con selectores de banda obtenidos por la regla del dedo, una regla plug-in y por validación cruzada
+
+```{r}
+par(mfrow=c(1,1))
+#Regla del dedo
+(bw.nrd(income))
+dedo<-density(income,bw=bw.nrd(income))
+plot(dedo,col=2,lwd=1.5)
+
+#Plug-in de Sheather and Jones (en dos estados)
+(bw.SJ(income, method = "dpi"))
+plug<-density(income,bw=bw.SJ(income, method = "dpi"))
+lines(plug,col="blue",lwd=1.5)
+
+#Selector por validaci?n cruzada
+(bw.ucv(income))
+valid<-density(income,bw=bw.ucv(income))
+lines(valid,col="springgreen4",lwd=1.5)
+
+legend("topright",legend=c("regla del dedo, h=1280.189","regla plug-in, h=1092.837",
+                           "validación cruzada, h=1137.521"), bty="n",lty=1, 
+       col=c(2,"blue","springgreen4")
+       , cex=1.1,lwd=2)
+
+```
+
+En el gráfico anterior están representadas simultáneamente las densidades de la variable income utilizando selectores de banda obtenidos por la regla del dedo, una regla plug-in y por validación cruzada. Observamos como todos trabajan de una forma similar y como la densidad calculada utilizando el ancho de banda seleccionado por la regla del dedo se aleja de aquellas calculadas utilizando tanto el ancho de banda seleccionado por la regla plug-in como aquel seleccionado por validación cruzada.
+
+\newpage
+
+(iii) el mejor ajuste normal
+
+En este caso se hará el siguiente contraste de hipótesis:
+
+H0: Income es normal
+
+H1: Income no es normal
+
+Para ello evaluamos el ISE de la muestra, y el ISE para N muestras aleatorias de longitud igual a la de income generadas desde una normal estándar para aproximar la distribución del ISE bajo la hipótesis nula. Una vez realizado, sacamos el p.valor estimado, sumando cuantas veces el ISE de income es superior al ISE de las distribuciones generadas anteriormente y lo dividimos por el numero de distribuciones generadas.
+
+```{r,out.width="90%"}
+
+library(sm)
+nise.observado <- nise(income)
+N <- 1000
+n <- length(income)
+nise.simulado.bajo.H0 <- replicate(N, expr=nise(rnorm(n)) )
+p.valor <- sum(nise.simulado.bajo.H0 > nise.observado)/N
+print(c(nise.observado,p.valor))
+sm.density(income,model="Normal") 
+```
+
+Una vez realizado, obtenemos un p.valor de 0.000\<0.05, de forma que rechazamos H0 y concluimos que la densidad de Income no es normal. También se puede observar como en el gráfico anterior la densidad de Income está fuera de las bandas de referencia a la distribución normal.
+
+(iv) Proporcionar un gráfico de la función de validación cruzada para un rango equiespaciado de valores del parámetro de suavizado.
+
+```{r}
+bw.ucv.mod <- function(x, nb = 1000L,
+                       h.grid = diff(range(x)) * (seq(0.1, 1, l = 200))^2,
+                       plot.cv = FALSE) {
+  if ((n <- length(x)) < 2L)
+    stop("need at least 2 data points")
+  n <- as.integer(n)
+  if (is.na(n))
+    stop("invalid length(x)")
+  if (!is.numeric(x))
+    stop("invalid 'x'")
+  nb <- as.integer(nb)
+  if (is.na(nb) || nb <= 0L)
+    stop("invalid 'nb'")
+  storage.mode(x) <- "double"
+  hmax <- 1.144 * sqrt(var(x)) * n^(-1/5)
+  Z <- .Call(stats:::C_bw_den, nb, x)
+  d <- Z[[1L]]
+  cnt <- Z[[2L]]
+  fucv <- function(h) .Call(stats:::C_bw_ucv, n, d, cnt, h)
+  obj <- sapply(h.grid, function(h) fucv(h))
+  h <- h.grid[which.min(obj)]
+  if (plot.cv) {
+    plot(h.grid, obj, type = "o")
+    rug(h.grid)
+    abline(v = h, col = 2, lwd = 2)
+  }
+  h
+}
+
+bw.ucv.mod(income, plot.cv = TRUE,h.grid=seq(30000,100,l=200))
+```
+
+En el gráfico anterior se evalúa la función validación cruzada en los distintos puntos de h. Observamos un mínimo en el valor 1151, que no dista del valor de h que nos devuelve la función bw.uc.
+
+#### b) Segmentar el archivo en dos grupos C1 y C2 caracterizados porque la variable prestige sea menor o mayor que su mediana muestral, respectivamente. Chequear analítica y gráficamente la hipótesis nula de que la densidad de la variable women (porcentaje de mujeres en la ocupación) es idéntica en ambos grupos.
+
+\
+En este caso, el contraste de hipótesis a realizar es el siguiente:
+
+$H0: F(C1) = F(C2)$
+
+$H1: F(C1) \neq F(C2)$
+
+```{r}
+C1<-datos[prestige>median(prestige),]
+C2<-datos[prestige<median(prestige),]
+nrow(C1)
+nrow(C2)
+sm.density.compare(c(C1$women,C2$women),g=rep(1:2, each=51),model="equal") 
+```
+
+Al realizar el test obtenemos un p.valor de 0.6\>0.05. De esta forma, al 95% de confianza no rechazamos la hipótesis nula y aceptamos que la densidad de la variable women (porcentaje de mujeres en la ocupación) es idéntica en ambos grupos. Además, en el gráfico anterior observamos como la densidad estimada para ambos grupos se encuentra dentro de la banda de confianza creada, reafirmando los resultados obtenidos de forma analítica.
+
+#### 
+
+#### c) Ajustar la regresión prestige = m(income) con estimadores de Nadaraya-Watson y local lineal. ¿Se observa un efecto frontera? Comentarlo.
+
+```{r,display=F,warning=F}
+library(KernSmooth)
+```
+
+```{r, warning=F,}
+datos2 <- datos[order(datos$income),]
+
+  hPI <- dpill(x=datos2$income,y=datos2$prestige) 
+
+plot(datos2$income,datos2$prestige,pch=20,main="", xlab="Ingresos",
+     ylab="Prestigio",cex.lab=1.1)
+
+# Nadaraya-Watson (equivalentemente RP con p=0)
+lines(locpoly(datos2$income, datos2$prestige, degree=0, bandwidth=hPI), 
+      col="magenta",lwd=2 )
+# Local Lineal (equivalentemente RP con p=1)
+lines(locpoly(datos2$income, datos2$prestige, degree=1, bandwidth=hPI),col="blue",lwd=2)
+
+legend("bottom", legend=c("NW","LL"), lty=1, lwd=2, cex=1.2, ncol=2, 
+       col=c("magenta","blue"), inset=0.02)
+```
+
+En el gráfico anterior observamos como ambos estimadores difieren bastante, llegando a coincidir únicamente en algunos puntos del interior del dominio de x. Se observa, también como el ajuste de Nadaraya-Watson presenta un severo sesgo positivo en la frontera izquierda. \newpage
+
+#### d) Emplear el algoritmo loess para predecir los valores de prestige sobre los cuartiles muestrales de income.
+
+\
+A continuación, se ha ejecutado el algoritmo loess en la librería stats para obtener la regresión de prestige sobre income , posteriormente se han calculado los cuartiles muestrales de income, resultando ser: 4106, 5930.50 y 8187.25 y finalmente se han efectuado las predicciones de los valores de prestige sobre los cuartiles muestrales de income. Las predicciones obtenidas han sido:37.069, 48.055, 56.946.
+
+```{r,out.width="100%"}
+estloess20 <- loess(prestige~income, span=0.2, data=datos2)
+
+plot(datos2$income,datos2$prestige,pch=20,main="", 
+     xlab="Ingresos",
+     ylab="Prestigio",cex.lab=1.1)
+suavizado20 <- predict(estloess20)
+lines(datos2$income,suavizado20,lwd=2,col="blue")
+
+quantile(datos$income)
+p.eval <- data.frame(income=c(4106,5930.50,8187.25))
+pred <- predict(estloess20, newdata=p.eval, se = TRUE)
+pred
+cbind(p.eval, pred$fit, pred$se.fit)
+points(c(4106,5930.50,8187.25),pred$fit,pch=16,col=2,cex=1)
+```
